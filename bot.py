@@ -1,20 +1,37 @@
-
 import os
 import json
 import logging
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Configuración de logs para ver errores en la consola de Koyeb
+# Configuración de logs
 logging.basicConfig(level=logging.INFO)
 
-# --- PERSISTENCIA SIMPLE ---
+# --- SERVIDOR WEB PARA RENDER ---
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is Running")
+
+def run_web_server():
+    # Render asigna un puerto automáticamente en la variable 'PORT'
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), SimpleHandler)
+    server.serve_forever()
+
+# --- LÓGICA DEL BOT ---
 DATA_FILE = "datos_bot.json"
 
 def cargar_datos():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(DATA_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {"grupos": [], "media": []}
     return {"grupos": [], "media": []}
 
 def guardar_datos(datos):
@@ -23,7 +40,6 @@ def guardar_datos(datos):
 
 datos = cargar_datos()
 
-# --- FUNCIONES DEL BOT ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡Bot activo! Envíame fotos/videos por privado y usa /on en grupos.")
 
@@ -31,7 +47,6 @@ async def collect_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat.type == 'private':
         file_id = None
         m_type = ""
-        
         if update.message.photo:
             file_id = update.message.photo[-1].file_id
             m_type = "photo"
@@ -49,7 +64,7 @@ async def on(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in datos["grupos"]:
         datos["grupos"].append(chat_id)
         guardar_datos(datos)
-    await update.message.reply_text("🚀 Envío activado: 1 mensaje por minuto.")
+    await update.message.reply_text("🚀 Envío activado (1 por min).")
 
 async def off(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -61,10 +76,7 @@ async def off(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_media_task(context: ContextTypes.DEFAULT_TYPE):
     if not datos["media"] or not datos["grupos"]:
         return
-
-    # Enviamos el último archivo recibido (puedes cambiar la lógica aquí)
     media = datos["media"][-1] 
-    
     for chat_id in datos["grupos"]:
         try:
             if media['type'] == 'photo':
@@ -77,21 +89,20 @@ async def send_media_task(context: ContextTypes.DEFAULT_TYPE):
 def main():
     TOKEN = os.getenv("TOKEN")
     
-    # Construimos la aplicación
+    # Iniciamos el servidor web en un hilo aparte
+    threading.Thread(target=run_web_server, daemon=True).start()
+    
     app = Application.builder().token(TOKEN).build()
-
-    # --- REGISTRO DE MANEJADORES ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("on", on))
     app.add_handler(CommandHandler("off", off))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO, collect_media))
 
-    # --- PROGRAMADOR ---
-    # Verificamos que job_queue exista para evitar el AttributeError
     if app.job_queue:
         app.job_queue.run_repeating(send_media_task, interval=60, first=10)
-    else:
-        logging.error("No se pudo iniciar JobQueue. Revisa los requirements.")
 
-    # Iniciamos el bot
     app.run_polling()
+
+if __name__ == '__main__':
+    main()
+    
