@@ -75,21 +75,23 @@ async def send_media_task(context: ContextTypes.DEFAULT_TYPE):
             logging.error(f"Error en {chat_id}: {e}")
 
 def main():
-    # USAMOS LA VARIABLE DE ENTORNO 'TOKEN' QUE PONDREMOS EN KOYEB
     TOKEN = os.getenv("TOKEN")
     
+    # Construimos la aplicación
     app = Application.builder().token(TOKEN).build()
 
+    # --- REGISTRO DE MANEJADORES ---
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("on", on))
     app.add_handler(CommandHandler("off", off))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO, collect_media))
 
-    # Programador cada 60 segundos
-    app.job_queue.run_repeating(send_media_task, interval=60, first=10)
+    # --- PROGRAMADOR ---
+    # Verificamos que job_queue exista para evitar el AttributeError
+    if app.job_queue:
+        app.job_queue.run_repeating(send_media_task, interval=60, first=10)
+    else:
+        logging.error("No se pudo iniciar JobQueue. Revisa los requirements.")
 
+    # Iniciamos el bot
     app.run_polling()
-
-if __name__ == '__main__':
-    main()
-  
