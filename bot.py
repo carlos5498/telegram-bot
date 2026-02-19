@@ -20,17 +20,17 @@ col_media = db['lista_media']
 col_config = db['config_grupos']
 col_enviados = db['registro_enviados']
 
-# --- SERVIDOR WEB ---
+# --- SERVIDOR WEB (Evita el apagado en Render) ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Bombardeo con MongoDB Running")
+        self.wfile.write(b"Bot Bombardeo Activo")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     HTTPServer(('0.0.0.0', port), SimpleHandler).serve_forever()
 
-# --- TECLADOS INTERACTIVOS ---
+# --- INTERFAZ DE USUARIO (BOTONES) ---
 def get_main_keyboard(chat_id):
     conf = col_config.find_one({"chat_id": chat_id}) or {"cant": 1, "time": 1, "repeat": True}
     cant = conf.get("cant", 1)
@@ -64,7 +64,7 @@ def get_options_keyboard(tipo, chat_id):
     keyboard.append([InlineKeyboardButton("⬅️ Volver", callback_data=f"back_{chat_id}")])
     return InlineKeyboardMarkup(keyboard)
 
-# --- TAREA DE ENVÍO ---
+# --- TAREA DE ENVÍO AUTOMÁTICO (JOB) ---
 async def send_media_job(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     conf = col_config.find_one({"chat_id": chat_id})
@@ -72,14 +72,15 @@ async def send_media_job(context: ContextTypes.DEFAULT_TYPE):
     
     if not conf or not all_media: return
 
-    # Filtrar si no repite
+    # Filtrar si la opción de repetir está en FALSO (X)
     disponibles = all_media
     if not conf.get("repeat", True):
-        enviados = col_enviados.find_one({"chat_id": chat_id}) or {"ids": []}
-        disponibles = [m for m in all_media if m["id"] not in enviados["ids"]]
+        registro = col_enviados.find_one({"chat_id": chat_id}) or {"ids": []}
+        disponibles = [m for m in all_media if m["unique_id"] not in registro["ids"]]
 
     if not disponibles:
-        await context.bot.send_message(MY_ID, f"⚠️ Contenido agotado en grupo {chat_id}. Detenido.")
+        # Notificar al dueño por privado si se agota el material
+        await context.bot.send_message(MY_ID, f"⚠️ Se terminó el contenido nuevo para el grupo `{chat_id}`. Bombardeo pausado.")
         context.job.schedule_removal()
         return
 
@@ -93,15 +94,16 @@ async def send_media_job(context: ContextTypes.DEFAULT_TYPE):
             else:
                 await context.bot.send_video(chat_id, media['id'])
             
+            # Registrar como enviado si no se permite repetir
             if not conf.get("repeat", True):
-                col_enviados.update_one({"chat_id": chat_id}, {"$push": {"ids": media["id"]}}, upsert=True)
+                col_enviados.update_one({"chat_id": chat_id}, {"$push": {"ids": media["unique_id"]}}, upsert=True)
         except Exception as e:
-            logging.error(f"Error: {e}")
+            logging.error(f"Error enviando media: {e}")
 
-# --- MANEJADORES ---
+# --- MANEJADORES DE COMANDOS Y BOTONES ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id == MY_ID:
-        await update.message.reply_text("Panel Multimedia (Mongo Cloud):", reply_markup=get_main_keyboard(update.effective_chat.id))
+        await update.message.reply_text("Panel de Control (MongoDB Cloud):", reply_markup=get_main_keyboard(update.effective_chat.id))
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -125,41 +127,67 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         curr = col_config.find_one({"chat_id": chat_id}) or {"repeat": True}
         new_val = not curr.get("repeat", True)
         col_config.update_one({"chat_id": chat_id}, {"$set": {"repeat": new_val}}, upsert=True)
-        if new_val: col_enviados.delete_one({"chat_id": chat_id}) # Reset si vuelve a repetir
+        # Si se activa repetir, limpiamos el historial de enviados para ese grupo
+        if new_val: col_enviados.delete_one({"chat_id": chat_id})
         await query.edit_message_reply_markup(get_main_keyboard(chat_id))
     elif "back" in data:
         await query.edit_message_reply_markup(get_main_keyboard(chat_id))
     elif "start_bomb" in data:
         conf = col_config.find_one({"chat_id": chat_id}) or {"time": 1}
+        # Eliminar cualquier tarea previa para este grupo antes de iniciar la nueva
         for j in context.job_queue.get_jobs_by_name(str(chat_id)): j.schedule_removal()
-        context.job_queue.run_repeating(send_media_job, interval=conf.get("time",1)*60, first=5, chat_id=chat_id, name=str(chat_id))
-        await query.edit_message_text("🚀 Bombardeo iniciado/actualizado.")
+        context.job_queue.run_repeating(send_media_job, interval=conf.get("time", 1)*60, first=5, chat_id=chat_id, name=str(chat_id))
+        await query.edit_message_text("🚀 Bombardeo iniciado o actualizado correctamente.")
     elif "stop_bomb" in data:
         for j in context.job_queue.get_jobs_by_name(str(chat_id)): j.schedule_removal()
         await query.edit_message_text("🛑 Bombardeo detenido.")
 
+# --- COLECCIÓN DE MEDIA (CON FILTRO ANTI-REPETIDOS) ---
 async def collect_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id != MY_ID or update.message.chat.type != 'private': return
-    fid = update.message.photo[-1].file_id if update.message.photo else update.message.video.file_id
-    mtype = "photo" if update.message.photo else "video"
-    col_media.update_one({"id": fid}, {"$set": {"type": mtype, "id": fid}}, upsert=True)
-    count = col_media.count_documents({})
-    await update.message.reply_text(f"✅ Guardado en Nube. Total: {count}")
+    
+    if update.message.photo:
+        archivo = update.message.photo[-1]
+        mtype = "photo"
+    elif update.message.video:
+        archivo = update.message.video
+        mtype = "video"
+    else: return
+
+    fid = archivo.file_id
+    f_unique_id = archivo.file_unique_id
+
+    # Verificar si ya existe en la base de datos
+    existe = col_media.find_one({"unique_id": f_unique_id})
+    if existe:
+        await update.message.reply_text("⚠️ Este archivo ya lo tengo guardado.")
+    else:
+        col_media.update_one(
+            {"unique_id": f_unique_id}, 
+            {"$set": {"type": mtype, "id": fid, "unique_id": f_unique_id}}, 
+            upsert=True
+        )
+        count = col_media.count_documents({})
+        await update.message.reply_text(f"✅ Guardado único. Total en lista: {count}")
 
 async def limpiar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id == MY_ID:
         col_media.delete_many({}); col_enviados.delete_many({})
-        await update.message.reply_text("🗑️ Base de datos de medios vaciada.")
+        await update.message.reply_text("🗑️ Memoria de medios vaciada por completo.")
 
+# --- ARRANQUE ---
 def main():
     threading.Thread(target=run_web_server, daemon=True).start()
     app = Application.builder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("limpiar", limpiar))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO, collect_media))
+    
+    print("Bot Bombardeo con Filtro de Duplicados Iniciado...")
     app.run_polling()
 
 if __name__ == '__main__':
     main()
-        
+    
