@@ -29,7 +29,7 @@ lock = asyncio.Lock()
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Running - Comandos Activados")
+        self.wfile.write(b"Bot Running - Sin Reenvio de Comandos")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -80,7 +80,7 @@ async def procesar_y_enviar_album(context, mg_id):
             await asyncio.sleep(0.1)
         except: pass
 
-# --- MANEJADORES DE COMANDOS SOLICITADOS ---
+# --- MANEJADORES DE COMANDOS ---
 
 async def cmd_usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count = users_col.count_documents({"status": "accepted"})
@@ -151,19 +151,23 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or update.message.caption or ""
     config = get_config()
 
-    # Comandos Manuales Admin
-    if user_id == MY_ID:
-        if text.startswith("/usuarioaceptado"):
-            target_id = int(text.replace("/usuarioaceptado", ""))
-            users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted", "aportes": 0, "last_reset": str(datetime.date.today())}})
-            await update.message.reply_text(f"✅ 𝗨𝘀𝘂𝗮𝗿𝗶𝗼 {target_id} 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.")
-            return await context.bot.send_message(target_id, "¡𝗛𝗮 𝘀𝗶𝗱𝗼 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼!")
+    # --- SEGURIDAD: NO REENVIAR COMANDOS ---
+    if text.startswith("/"):
+        # Lógica especial para comandos manuales de Admin en el texto
+        if user_id == MY_ID:
+            if text.startswith("/usuarioaceptado"):
+                target_id = int(text.replace("/usuarioaceptado", ""))
+                users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted", "aportes": 0, "last_reset": str(datetime.date.today())}})
+                await update.message.reply_text(f"✅ 𝗨𝘀𝘂𝗮𝗿𝗶𝗼 {target_id} 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.")
+                return await context.bot.send_message(target_id, "¡𝗛𝗮 𝘀𝗶𝗱𝗼 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼!")
 
-        if text.startswith("/usuariobaneado"):
-            target_id = int(text.replace("/usuariobaneado", ""))
-            users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
-            await update.message.reply_text(f"🚫 𝗨𝘀𝘂𝗮𝗿𝗶𝗼 {target_id} 𝗯𝗮𝗻𝗲𝗮𝗱𝗼.")
-            return await context.bot.send_message(target_id, "¡𝗛𝗮 𝘀𝗶𝗱𝗼 𝗯𝗮𝗻𝗲𝗮𝗱𝗼 𝗽𝗼𝗿 𝗻𝗼 𝗰𝘂𝗺𝗽𝗹𝗶𝗿 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝗮 𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀.")
+            if text.startswith("/usuariobaneado"):
+                target_id = int(text.replace("/usuariobaneado", ""))
+                users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
+                await update.message.reply_text(f"🚫 𝗨𝘀𝘂𝗮𝗿𝗶𝗼 {target_id} 𝗯𝗮𝗻𝗲𝗮𝗱𝗼.")
+                return await context.bot.send_message(target_id, "¡𝗛𝗮 𝘀𝗶𝗱𝗼 𝗯𝗮𝗻𝗲𝗮𝗱𝗼 𝗽𝗼𝗿 𝗻𝗼 𝗰𝘂𝗺𝗽𝗹𝗶𝗿 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝗮 𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀.")
+        
+        return # Si empieza con / y no es lo anterior, ignoramos el reenvío
 
     if re.search(r"(http://|https://|t\.me/|\.com)", text.lower()) and user_id != MY_ID:
         return await update.message.reply_text("🚫 𝗡𝗼 𝘀𝗲 𝗽𝗲𝗿𝗺𝗶𝘁𝗲𝗻 𝗲𝗻𝗹𝗮𝗰𝗲𝘀.")
@@ -225,9 +229,9 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("solicitar", solicitar))
-    app.add_handler(CommandHandler("usuarios", cmd_usuarios)) # ACTIVADO
-    app.add_handler(CommandHandler("aportes", cmd_aportes))   # ACTIVADO
-    app.add_handler(CommandHandler("reset", cmd_reset))       # ACTIVADO
+    app.add_handler(CommandHandler("usuarios", cmd_usuarios))
+    app.add_handler(CommandHandler("aportes", cmd_aportes))
+    app.add_handler(CommandHandler("reset", cmd_reset))
     app.add_handler(MessageHandler(filters.ALL, handle_broadcast))
     app.run_polling(drop_pending_updates=True)
 
