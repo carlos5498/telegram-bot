@@ -29,7 +29,7 @@ lock = asyncio.Lock()
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Running - Fuente Especial")
+        self.wfile.write(b"Bot Running - Albumes Corregidos")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -68,7 +68,20 @@ def get_config():
         return default
     return config
 
-# --- MANEJADORES CON FUENTE ESPECIAL Y COMANDOS CLIQUEABLES ---
+# --- PROCESAMIENTO DE ÁLBUMES (CORREGIDO) ---
+async def procesar_y_enviar_album(context, mg_id):
+    await asyncio.sleep(5)
+    async with lock:
+        data = ALBUMES_COLA.pop(mg_id, None)
+    if not data: return
+    for target in users_col.find({"status": "accepted"}):
+        if target["user_id"] == data['sender_id']: continue
+        try:
+            await context.bot.send_media_group(chat_id=target["user_id"], media=data['media'])
+            await asyncio.sleep(0.1)
+        except: pass
+
+# --- MANEJADORES ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -134,21 +147,34 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
             return await update.message.reply_text("🚀 𝗗𝗶𝗳𝘂𝘀𝗶𝗼́𝗻 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗮.")
 
+    # Reenvío con soporte para ÁLBUMES
     if user["status"] == "accepted":
         if config["paused"] and user_id != MY_ID: return
         if await check_daily_reset(user_id, user, context): return
 
         file_id = None
+        media_obj = None
         if update.message.photo:
             file_id = update.message.photo[-1].file_unique_id
+            media_obj = InputMediaPhoto(update.message.photo[-1].file_id, caption=update.message.caption)
         elif update.message.video:
             file_id = update.message.video.file_unique_id
+            media_obj = InputMediaVideo(update.message.video.file_id, caption=update.message.caption)
 
         if file_id:
             if files_col.find_one({"file_id": file_id}):
                 return await update.message.reply_text("❌ 𝗿𝗲𝗽𝗲𝘁𝗶𝗱𝗼")
             files_col.insert_one({"file_id": file_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
+
+            if update.message.media_group_id:
+                mg_id = update.message.media_group_id
+                async with lock:
+                    if mg_id not in ALBUMES_COLA:
+                        ALBUMES_COLA[mg_id] = {'sender_id': user_id, 'media': []}
+                        asyncio.create_task(procesar_y_enviar_album(context, mg_id))
+                    ALBUMES_COLA[mg_id]['media'].append(media_obj)
+                return
 
         for target in users_col.find({"status": "accepted"}):
             if target["user_id"] == user_id: continue
