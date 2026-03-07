@@ -24,7 +24,7 @@ files_col = db['archivos_vistos']
 ADJETIVOS = ["Bravo", "Veloz", "Oscuro", "Místico", "Feroz", "Silencioso", "Letal"]
 ANIMALES = ["Lobo", "Zorro", "Halcón", "Tigre", "Puma", "Serpiente", "Águila"]
 
-# --- SERVIDOR WEB (Obligatorio para Render) ---
+# --- SERVIDOR WEB ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
@@ -84,36 +84,38 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(reglas)
     
-    # Notificar al Admin para que vea el comando en Telegraph
-    await context.bot.send_message(MY_ID, f"SOLICITUD: {user_id}\nNombre: {user['name']}\n\n`/usuarioaceptado{user_id}`\n`/usuariobaneado{user_id}`")
+    # Te manda el comando a ti para que lo veas
+    await context.bot.send_message(MY_ID, f"SOLICITUD: {user_id}\nNombre: {user['name']}\n\nComando aceptar:\n`/usuarioaceptado{user_id}`\n\nComando banear:\n`/usuariobaneado{user_id}`")
 
 async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Esta función ahora es mucho más agresiva para detectar el comando
     text = update.message.text
-    bot_id = context.bot.id
-    sender_id = update.effective_user.id
+    if not text: return
 
-    # Solo funciona si lo envías tú (MY_ID) o el propio BOT (vía Telegraph)
-    if sender_id == MY_ID or sender_id == bot_id:
-        try:
-            if "/usuarioaceptado" in text:
-                target_id = int(text.replace("/usuarioaceptado", ""))
-                users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted"}})
-                await update.message.delete()
-                await context.bot.send_message(target_id, "Felicidades haz sido aceptado! Comparte contenido libremente, no te olvides de seguir las reglas y de tu aporte diario para no ser baneado!")
-            
-            elif "/usuariobaneado" in text:
-                target_id = int(text.replace("/usuariobaneado", ""))
-                users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
-                await update.message.delete()
-                await context.bot.send_message(target_id, "Haz sido betado del bot, por incumplir alguna regla o no haber cumplido con tus aportes diarios, por ahora no hay forma de regresar!")
-        except Exception as e:
-            logging.error(f"Error en admin_control: {e}")
+    # Extraer ID del texto (ej: /usuarioaceptado54 -> 54)
+    try:
+        if "/usuarioaceptado" in text:
+            target_id = int(text.split("/usuarioaceptado")[-1])
+            users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted"}})
+            await update.message.delete()
+            await context.bot.send_message(target_id, "Felicidades haz sido aceptado! Comparte contenido libremente, no te olvides de seguir las reglas y de tu aporte diario para no ser baneado!")
+        
+        elif "/usuariobaneado" in text:
+            target_id = int(text.split("/usuariobaneado")[-1])
+            users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
+            await update.message.delete()
+            await context.bot.send_message(target_id, "Haz sido betado del bot, por incumplir alguna regla o no haber cumplido con tus aportes diarios, por ahora no hay forma de regresar!")
+    except Exception as e:
+        logging.error(f"Error procesando comando: {e}")
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # SI EL MENSAJE ES UN COMANDO DE ADMIN, LO PROCESAMOS PRIMERO
+    if update.message.text and "/usuario" in update.message.text:
+        await admin_control(update, context)
+        return
+
     user_id = update.effective_user.id
     user = get_user(user_id)
-    
-    # Solo procesa si el usuario está aceptado
     if not user or user["status"] != "accepted": return
     
     await check_daily_reset(user_id, user)
@@ -122,7 +124,6 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo: file_id = update.message.photo[-1].file_unique_id
     elif update.message.video: file_id = update.message.video.file_unique_id
 
-    # Lógica Anti-repetidos
     if file_id:
         if files_col.find_one({"file_id": file_id}):
             await update.message.reply_text("video repetido")
@@ -130,7 +131,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         files_col.insert_one({"file_id": file_id, "user": user_id})
         users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
-    # Reenvío a todos los usuarios aceptados
+    # Reenvío
     for target in users_col.find({"status": "accepted"}):
         if target["user_id"] == user_id: continue
         try:
@@ -165,17 +166,12 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("solicitar", solicitar))
-    
-    # Manejador para los comandos de aceptación/baneo
-    app.add_handler(MessageHandler(filters.Regex(r'^/usuario(aceptado|baneado)'), admin_control))
-    
     app.add_handler(CommandHandler(["user", "usuarios", "aportes"], commands_user))
     
-    # Manejador de contenido multimedia y texto para broadcast
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO) & ~filters.COMMAND, handle_broadcast))
+    # CAMBIO CLAVE: El MessageHandler ahora captura TODO para que el bot no se ignore a sí mismo
+    app.add_handler(MessageHandler(filters.ALL, handle_broadcast))
     
-    # AJUSTE PARA TELEGRAPH: Permite que el bot procese sus propios mensajes
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling()
 
 if __name__ == '__main__':
     main()
