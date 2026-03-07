@@ -6,7 +6,7 @@ import asyncio
 import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pymongo import MongoClient
-from telegram import Update
+from telegram import Update, InputMediaPhoto, InputMediaVideo
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # --- CONFIGURACIÓN ---
@@ -15,8 +15,6 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv("TOKEN")
 MY_ID = int(os.getenv("MY_ID", "0"))
 MONGO_URI = os.getenv("MONGO_URI")
-
-# Constante de acceso al panel
 ADMIN_PASSWORD = "Carlos13mar"
 
 try:
@@ -28,6 +26,10 @@ try:
     print("✅ Conexión a MongoDB exitosa")
 except Exception as e:
     print(f"❌ Error MongoDB: {e}")
+
+# Memoria temporal para álbumes
+ALBUMES_COLA = {}
+lock = asyncio.Lock()
 
 # --- SERVIDOR WEB ---
 class SimpleHandler(BaseHTTPRequestHandler):
@@ -47,7 +49,6 @@ def get_user(user_id):
 def get_config():
     config = config_col.find_one({"key": "global_config"})
     if not config:
-        # Configuración inicial por defecto
         default = {"key": "global_config", "paused": False, "auto_pass": "planpa54", "pass_active": True}
         config_col.insert_one(default)
         return default
@@ -60,44 +61,38 @@ async def check_daily_reset(user_id, user_data):
         return 0
     return user_data.get("aportes", 0)
 
-# --- MANEJADORES ---
+# --- LÓGICA DE REENVÍO DE ÁLBUMES ---
+async def procesar_y_enviar_album(context, mg_id):
+    await asyncio.sleep(5) # Tiempo de espera para recolectar el álbum
+    
+    async with lock:
+        data = ALBUMES_COLA.pop(mg_id, None)
+    
+    if not data or not data['media']: return
 
+    destinatarios = list(users_col.find({"status": "accepted"}))
+    for target in destinatarios:
+        if target["user_id"] == data['sender_id']: continue
+        try:
+            await context.bot.send_media_group(chat_id=target["user_id"], media=data['media'])
+            await asyncio.sleep(0.5)
+        except: pass
+
+# --- MANEJADORES ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user = get_user(user_id)
-    if not user:
-        users_col.insert_one({
-            "user_id": user_id,
-            "status": "pending",
-            "aportes": 0,
-            "last_reset": str(datetime.date.today())
-        })
+    if not get_user(user_id):
+        users_col.insert_one({"user_id": user_id, "status": "pending", "aportes": 0, "last_reset": str(datetime.date.today())})
     
-    bienvenida = (
-        "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼.\n\n"
-        "𝗣𝗮𝗿𝗮 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼:\n"
-        "• 𝗘𝗻𝘃𝗶́𝗮 𝟭𝟬𝟬 𝗺𝘂𝗹𝘁𝗶𝗺𝗲𝗱𝗶𝗮 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.\n"
-        "• 𝗜𝗻𝗴𝗿𝗲𝘀𝗮 𝘂𝗻𝗮 𝗰𝗼𝗻𝘁𝗿𝗮𝘀𝗲𝗻̃𝗮 𝗱𝗲 𝗮𝗰𝗰𝗲𝘀𝗼 𝘀𝗶 𝘁𝗶𝗲𝗻𝗲𝘀 𝘂𝗻𝗮.\n"
-        "• 𝗨𝘀𝗮 /solicitar 𝗽𝗮𝗿𝗮 𝗮𝘃𝗶𝘀𝗮𝗿 𝗮𝗹 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿."
-    )
-    await update.message.reply_text(bienvenida)
+    await update.message.reply_text("¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! Envía 100 aportes o la contraseña para ser aceptado.")
 
 async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_data = update.effective_user
-    await update.message.reply_text("¡𝗦𝗼𝗹𝗶𝗰𝗶𝘁𝘂𝗱 𝗲𝗻𝘃𝗶𝗮𝗱𝗮! 𝗥𝗲𝘃𝗶𝘀𝗮 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝗳𝗶𝗷𝗮𝗱𝗮𝘀.")
-    
-    reglas = "🚫 𝗡𝗼 𝗴𝗮𝘆/𝗴𝗼𝗿𝗲/+𝟭𝟴\n🟢 𝟭𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀\n\n• /usuarios | /aportes"
-    msg_reglas = await update.message.reply_text(reglas)
-    try: await context.bot.pin_chat_message(chat_id=user_id, message_id=msg_reglas.message_id)
+    await update.message.reply_text("¡𝗦𝗼𝗹𝗶𝗰𝗶𝘁𝘂𝗱 𝗲𝗻𝘃𝗶𝗮𝗱𝗮!")
+    msg = await update.message.reply_text("🚫 No Gore/CP\n🟢 10 aportes diarios")
+    try: await context.bot.pin_chat_message(chat_id=user_id, message_id=msg.message_id)
     except: pass
-    
-    mensaje_admin = (
-        f"📥 𝗦𝗢𝗟𝗜𝗖𝗜𝗧𝗨𝗗: {user_data.full_name}\n"
-        f"🆔 ID: `{user_id}`\n"
-        f"𝗖𝗼𝗺𝗮𝗻𝗱𝗼𝘀: `/usuarioaceptado{user_id}`"
-    )
-    await context.bot.send_message(MY_ID, mensaje_admin, parse_mode="Markdown")
+    await context.bot.send_message(MY_ID, f"📥 Solicitud de: {update.effective_user.full_name}\nID: `{user_id}`\n`/usuarioaceptado{user_id}`", parse_mode="Markdown")
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message: return
@@ -105,74 +100,43 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     config = get_config()
 
-    # --- ACCESO PANEL ADMIN ---
+    # Panel Admin y Contraseñas
     if text == ADMIN_PASSWORD and user_id == MY_ID:
-        panel = (
-            "🔑 **PANEL ADMIN**\n"
-            "/reset - Limpiar repetidos\n"
-            "/mensaje - Enviar aviso global\n"
-            "/stop - Pausar/Reanudar bot\n"
-            "/revocar - Anular contraseña actual\n"
-            "/nuevapass [clave] - Cambiar contraseña"
-        )
-        return await update.message.reply_text(panel, parse_mode="Markdown")
+        return await update.message.reply_text("🔑 **PANEL ADMIN**\n/reset\n/mensaje\n/stop\n/revocar\n/nuevapass [clave]", parse_mode="Markdown")
 
-    # --- LÓGICA DE CONTRASEÑA DE USUARIO ---
     if text == config["auto_pass"] and config["pass_active"]:
         users_col.update_one({"user_id": user_id}, {"$set": {"status": "accepted"}})
-        return await update.message.reply_text("✅ ¡Acceso concedido! Ahora estás aceptado.")
+        return await update.message.reply_text("✅ ¡Acceso concedido!")
 
     user = get_user(user_id)
     if not user: return
 
-    # --- COMANDOS EXCLUSIVOS ADMIN ---
+    # Comandos de Admin
     if user_id == MY_ID:
         if text == "/reset":
-            files_col.delete_many({})
-            return await update.message.reply_text("✅ Duplicados reseteados.")
-        
+            files_col.delete_many({}); return await update.message.reply_text("✅ Reseteado.")
         if text == "/stop":
-            new_state = not config["paused"]
-            config_col.update_one({"key": "global_config"}, {"$set": {"paused": new_state}})
-            aviso = "🛑 **BOT EN MANTENIMIENTO**" if new_state else "✅ **BOT ACTIVO**"
-            for t in users_col.find({"status": "accepted"}):
-                try: await context.bot.send_message(t["user_id"], aviso, parse_mode="Markdown")
-                except: pass
-            return await update.message.reply_text(f"Pausa: {new_state}")
-
+            new_s = not config["paused"]
+            config_col.update_one({"key": "global_config"}, {"$set": {"paused": new_s}})
+            return await update.message.reply_text(f"Pausa: {new_s}")
         if text == "/revocar":
             config_col.update_one({"key": "global_config"}, {"$set": {"pass_active": False}})
-            return await update.message.reply_text("🚫 Contraseña revocada. Nadie nuevo puede entrar con ella.")
-
+            return await update.message.reply_text("🚫 Password revocada.")
         if text and text.startswith("/nuevapass "):
             nueva = text.split("/nuevapass ")[1].strip()
             config_col.update_one({"key": "global_config"}, {"$set": {"auto_pass": nueva, "pass_active": True}})
-            return await update.message.reply_text(f"✅ Nueva contraseña establecida: `{nueva}`", parse_mode="Markdown")
-
+            return await update.message.reply_text(f"✅ Nueva pass: `{nueva}`", parse_mode="Markdown")
         if text == "/mensaje":
             context.user_data['wait_msg'] = True
-            return await update.message.reply_text("Envié el mensaje global ahora:")
-
+            return await update.message.reply_text("Envíe el mensaje global:")
         if context.user_data.get('wait_msg'):
             context.user_data['wait_msg'] = False
             for t in users_col.find({"status": "accepted"}):
                 try: await update.message.copy(t["user_id"])
                 except: pass
-            return await update.message.reply_text("✅ Mensaje global enviado.")
+            return await update.message.reply_text("✅ Enviado.")
 
-        if text and "/usuario" in text:
-            try:
-                target_id = int(re.search(r'\d+', text).group())
-                if "aceptado" in text:
-                    users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted"}})
-                    await context.bot.send_message(target_id, "¡Has sido aceptado!")
-                elif "baneado" in text:
-                    users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
-                await update.message.delete()
-            except: pass
-            return
-
-    # --- LÓGICA DE USUARIOS ---
+    # Lógica de Usuario
     if config["paused"] and user_id != MY_ID: return
 
     if user["status"] == "pending":
@@ -182,33 +146,51 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user["status"] == "accepted":
         await check_daily_reset(user_id, user)
+        
+        # Identificar multimedia
         file_id = None
-        if update.message.photo: file_id = update.message.photo[-1].file_unique_id
-        elif update.message.video: file_id = update.message.video.file_unique_id
+        media_obj = None
+        caption = update.message.caption
+        
+        if update.message.photo:
+            file_id = update.message.photo[-1].file_unique_id
+            media_obj = InputMediaPhoto(update.message.photo[-1].file_id, caption=caption)
+        elif update.message.video:
+            file_id = update.message.video.file_unique_id
+            media_obj = InputMediaVideo(update.message.video.file_id, caption=caption)
 
         if file_id:
             if files_col.find_one({"file_id": file_id}):
-                return await update.message.reply_text("𝘃𝗶𝗱𝗲𝗼 𝗿𝗲𝗽𝗲𝘁𝗶𝗱𝗼")
+                return await update.message.reply_text("video repetido")
             files_col.insert_one({"file_id": file_id, "user": user_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
+            # Manejo de Álbumes (Media Groups)
+            mg_id = update.message.media_group_id
+            if mg_id:
+                async with lock:
+                    if mg_id not in ALBUMES_COLA:
+                        ALBUMES_COLA[mg_id] = {'sender_id': user_id, 'media': []}
+                        asyncio.create_task(procesar_y_enviar_album(context, mg_id))
+                    ALBUMES_COLA[mg_id]['media'].append(media_obj)
+                return
+
+        # Reenvío de mensajes individuales o texto
         for target in users_col.find({"status": "accepted"}):
             if target["user_id"] == user_id: continue
             try: await update.message.copy(target["user_id"])
             except: pass
 
 async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if get_config()["paused"]: return
     user_id = update.effective_user.id
     user = get_user(user_id)
-    if not user: return
-    
+    if not user or get_config()["paused"]: return
     if "/usuarios" in update.message.text:
         count = users_col.count_documents({"status": "accepted"})
-        await update.message.reply_text(f"𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀: {count}")
+        await update.message.reply_text(f"Usuarios activos: {count}")
     elif "/aportes" in update.message.text:
         ap = await check_daily_reset(user_id, user)
-        await update.message.reply_text(f"𝗣𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗵𝗼𝘆: {ap}/10")
+        await update.message.reply_text(f"Progreso: {ap}/10")
 
 def main():
     threading.Thread(target=run_web_server, daemon=True).start()
