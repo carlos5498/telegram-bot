@@ -29,7 +29,7 @@ lock = asyncio.Lock()
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Running - Panel Solicitudes OK")
+        self.wfile.write(b"Bot Running - Comandos Activados")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -80,7 +80,25 @@ async def procesar_y_enviar_album(context, mg_id):
             await asyncio.sleep(0.1)
         except: pass
 
-# --- MANEJADORES ---
+# --- MANEJADORES DE COMANDOS SOLICITADOS ---
+
+async def cmd_usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    count = users_col.count_documents({"status": "accepted"})
+    await update.message.reply_text(f"👥 𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲: {count}")
+
+async def cmd_aportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user = users_col.find_one({"user_id": user_id})
+    aportes = user.get("aportes", 0) if user else 0
+    await update.message.reply_text(f"📊 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼 𝗱𝗶𝗮𝗿𝗶𝗼: {aportes}/100")
+
+async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != MY_ID: return
+    baneados = await ejecutar_limpieza_inactividad(context)
+    files_col.delete_many({})
+    await update.message.reply_text(f"✅ 𝗥𝗲𝘀𝗲𝘁 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗼. 𝗕𝗮𝗻𝗲𝗮𝗱𝗼𝘀: {baneados}")
+
+# --- MANEJADORES BASE ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -116,7 +134,6 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await context.bot.pin_chat_message(chat_id=user_id, message_id=msg.message_id)
     except: pass
     
-    # Notificación al Admin con nuevo formato
     info_admin = (
         "📥 𝗡𝗨𝗘𝗩𝗔 𝗦𝗢𝗟𝗜𝗖𝗜𝗧𝗨𝗗\n\n"
         "🆔 𝗜𝗗: {id}\n"
@@ -126,7 +143,6 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/usuarioaceptado{id}\n"
         "/usuariobaneado{id}"
     ).format(id=user_id, nom=nombre, user=username)
-    
     await context.bot.send_message(MY_ID, info_admin)
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,7 +151,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or update.message.caption or ""
     config = get_config()
 
-    # Comandos de Aceptación/Baneo manual
+    # Comandos Manuales Admin
     if user_id == MY_ID:
         if text.startswith("/usuarioaceptado"):
             target_id = int(text.replace("/usuarioaceptado", ""))
@@ -149,21 +165,17 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🚫 𝗨𝘀𝘂𝗮𝗿𝗶𝗼 {target_id} 𝗯𝗮𝗻𝗲𝗮𝗱𝗼.")
             return await context.bot.send_message(target_id, "¡𝗛𝗮 𝘀𝗶𝗱𝗼 𝗯𝗮𝗻𝗲𝗮𝗱𝗼 𝗽𝗼𝗿 𝗻𝗼 𝗰𝘂𝗺𝗽𝗹𝗶𝗿 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝗮 𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀.")
 
-    # Anti-Spam
     if re.search(r"(http://|https://|t\.me/|\.com)", text.lower()) and user_id != MY_ID:
         return await update.message.reply_text("🚫 𝗡𝗼 𝘀𝗲 𝗽𝗲𝗿𝗺𝗶𝘁𝗲𝗻 𝗲𝗻𝗹𝗮𝗰𝗲𝘀.")
-
-    if text == ADMIN_PASSWORD and user_id == MY_ID:
-        return await update.message.reply_text("🔑 **𝗣𝗔𝗡𝗘𝗟 𝗔𝗗𝗠𝗜𝗡**\n/reset | /mensaje | /stop | /revocar | /nuevapass", parse_mode="Markdown")
 
     user = users_col.find_one({"user_id": user_id})
     if not user or user.get("status") == "banned": return
 
-    # Difusión Admin
+    # Difusión
     if user_id == MY_ID:
         if text == "/mensaje":
             context.user_data['wait_msg'] = True
-            return await update.message.reply_text("📢 **𝗠𝗢𝗗𝗢 𝗗𝗜𝗙𝗨𝗦𝗜𝗢́𝗡 𝗔𝗖𝗧𝗜𝗩𝗔𝗗𝗢**\n𝗘𝗻𝘃𝗶́𝗲 𝗲𝗹 𝗺𝗲𝗻𝘀𝗮𝗷𝗲 𝗮𝗵𝗼𝗿𝗮.", parse_mode="Markdown")
+            return await update.message.reply_text("📢 **𝗠𝗢𝗗𝗢 𝗗𝗜𝗙𝗨𝗦𝗜𝗢́𝗡 𝗔𝗖𝗧𝗜𝗩𝗔𝗗𝗢**", parse_mode="Markdown")
         if context.user_data.get('wait_msg'):
             context.user_data['wait_msg'] = False
             for t in users_col.find({"status": "accepted"}):
@@ -172,7 +184,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
             return await update.message.reply_text("🚀 𝗗𝗶𝗳𝘂𝘀𝗶𝗼́𝗻 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗮.")
 
-    # Reenvío Contenido
+    # Reenvío
     if user["status"] == "accepted":
         if config["paused"] and user_id != MY_ID: return
         if await check_daily_reset(user_id, user, context): return
@@ -192,8 +204,8 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files_col.insert_one({"file_id": file_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
-            mg_id = update.message.media_group_id
-            if mg_id:
+            if update.message.media_group_id:
+                mg_id = update.message.media_group_id
                 async with lock:
                     if mg_id not in ALBUMES_COLA:
                         ALBUMES_COLA[mg_id] = {'sender_id': user_id, 'media': []}
@@ -213,6 +225,9 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("solicitar", solicitar))
+    app.add_handler(CommandHandler("usuarios", cmd_usuarios)) # ACTIVADO
+    app.add_handler(CommandHandler("aportes", cmd_aportes))   # ACTIVADO
+    app.add_handler(CommandHandler("reset", cmd_reset))       # ACTIVADO
     app.add_handler(MessageHandler(filters.ALL, handle_broadcast))
     app.run_polling(drop_pending_updates=True)
 
