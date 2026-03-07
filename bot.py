@@ -29,7 +29,7 @@ lock = asyncio.Lock()
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Running - Sin Reenvio de Comandos")
+        self.wfile.write(b"Bot Running - Meta 10 Aportes")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -39,7 +39,8 @@ def run_web_server():
 # --- FUNCIONES DE LÓGICA ---
 
 async def ejecutar_limpieza_inactividad(context):
-    inactivos = users_col.find({"status": "accepted", "aportes": 0})
+    # BANEO SI TIENE MENOS DE 10 APORTES
+    inactivos = users_col.find({"status": "accepted", "aportes": {"$lt": 10}})
     count = 0
     for u in inactivos:
         if u["user_id"] == MY_ID: continue
@@ -52,7 +53,8 @@ async def ejecutar_limpieza_inactividad(context):
 async def check_daily_reset(user_id, user_data, context):
     today = str(datetime.date.today())
     if user_data.get("last_reset") != today:
-        if user_data.get("status") == "accepted" and user_data.get("aportes") == 0:
+        # BANEO SI AL CAMBIAR EL DIA TIENE MENOS DE 10
+        if user_data.get("status") == "accepted" and user_data.get("aportes", 0) < 10:
             users_col.update_one({"user_id": user_id}, {"$set": {"status": "banned"}})
             try: await context.bot.send_message(user_id, "🚫 𝗕𝗮𝗻𝗲𝗮𝗱𝗼 𝗽𝗼𝗿 𝗶𝗻𝗮𝗰𝘁𝗶𝘃𝗶𝗱𝗮𝗱.")
             except: pass
@@ -90,7 +92,7 @@ async def cmd_aportes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = users_col.find_one({"user_id": user_id})
     aportes = user.get("aportes", 0) if user else 0
-    await update.message.reply_text(f"📊 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼 𝗱𝗶𝗮𝗿𝗶𝗼: {aportes}/100")
+    await update.message.reply_text(f"📊 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼 𝗱𝗶𝗮𝗿𝗶𝗼: {aportes}/10")
 
 async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != MY_ID: return
@@ -108,7 +110,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensaje = (
         "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼𝗻𝗶𝗺𝗮.\n\n"
         "𝗣𝗮𝗿𝗮 𝗽𝗼𝗱𝗲𝗿 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼 𝗽𝗼𝗿 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿\n\n"
-        "• 𝗘𝗻𝘃𝗶𝗮 𝟭𝟬𝟬 𝗺𝘂𝗹𝘁𝗶𝗺𝗲𝗱𝗶𝗮 (𝗳𝗼𝘁𝗼𝘀/𝘃𝗶𝗱𝗲𝗼𝘀) 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.\n"
+        "• 𝗘𝗻𝘃𝗶𝗮 𝟭𝟬 𝗺𝘂𝗹𝘁𝗶𝗺𝗲𝗱𝗶𝗮 (𝗳𝗼𝘁𝗼𝘀/𝘃𝗶𝗱𝗲𝗼𝘀) 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.\n"
         "• 𝗟𝘂𝗲𝗴𝗼 𝘂𝘀𝗮 /solicitar 𝗽𝗮𝗿𝗮 𝗽𝗲𝗱𝗶𝗿 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿"
     )
     await update.message.reply_text(mensaje)
@@ -151,9 +153,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or update.message.caption or ""
     config = get_config()
 
-    # --- SEGURIDAD: NO REENVIAR COMANDOS ---
     if text.startswith("/"):
-        # Lógica especial para comandos manuales de Admin en el texto
         if user_id == MY_ID:
             if text.startswith("/usuarioaceptado"):
                 target_id = int(text.replace("/usuarioaceptado", ""))
@@ -166,8 +166,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
                 await update.message.reply_text(f"🚫 𝗨𝘀𝘂𝗮𝗿𝗶𝗼 {target_id} 𝗯𝗮𝗻𝗲𝗮𝗱𝗼.")
                 return await context.bot.send_message(target_id, "¡𝗛𝗮 𝘀𝗶𝗱𝗼 𝗯𝗮𝗻𝗲𝗮𝗱𝗼 𝗽𝗼𝗿 𝗻𝗼 𝗰𝘂𝗺𝗽𝗹𝗶𝗿 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝗮 𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀.")
-        
-        return # Si empieza con / y no es lo anterior, ignoramos el reenvío
+        return
 
     if re.search(r"(http://|https://|t\.me/|\.com)", text.lower()) and user_id != MY_ID:
         return await update.message.reply_text("🚫 𝗡𝗼 𝘀𝗲 𝗽𝗲𝗿𝗺𝗶𝘁𝗲𝗻 𝗲𝗻𝗹𝗮𝗰𝗲𝘀.")
@@ -175,7 +174,6 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = users_col.find_one({"user_id": user_id})
     if not user or user.get("status") == "banned": return
 
-    # Difusión
     if user_id == MY_ID:
         if text == "/mensaje":
             context.user_data['wait_msg'] = True
@@ -188,7 +186,6 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
             return await update.message.reply_text("🚀 𝗗𝗶𝗳𝘂𝘀𝗶𝗼́𝗻 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗮.")
 
-    # Reenvío
     if user["status"] == "accepted":
         if config["paused"] and user_id != MY_ID: return
         if await check_daily_reset(user_id, user, context): return
