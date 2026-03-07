@@ -68,19 +68,7 @@ def get_config():
         return default
     return config
 
-async def procesar_y_enviar_album(context, mg_id):
-    await asyncio.sleep(5)
-    async with lock:
-        data = ALBUMES_COLA.pop(mg_id, None)
-    if not data: return
-    for target in users_col.find({"status": "accepted"}):
-        if target["user_id"] == data['sender_id']: continue
-        try:
-            await context.bot.send_media_group(chat_id=target["user_id"], media=data['media'])
-            await asyncio.sleep(0.1)
-        except: pass
-
-# --- MANEJADORES ---
+# --- MANEJADORES CON FUENTE ESPECIAL Y COMANDOS CLIQUEABLES ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -91,7 +79,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼𝗻𝗶𝗺𝗮.\n\n"
         "𝗣𝗮𝗿𝗮 𝗽𝗼𝗱𝗲𝗿 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼 𝗽𝗼𝗿 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿\n\n"
         "• 𝗘𝗻𝘃𝗶𝗮 𝟭𝟬𝟬 𝗺𝘂𝗹𝘁𝗶𝗺𝗲𝗱𝗶𝗮 (𝗳𝗼𝘁𝗼𝘀/𝘃𝗶𝗱𝗲𝗼𝘀) 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.\n"
-        "• 𝗟𝘂𝗲𝗴𝗼 𝘂𝘀𝗮 /𝘀𝗼𝗹𝗶𝗰𝗶𝘁𝗮𝗿 𝗽𝗮𝗿𝗮 𝗽𝗲𝗱𝗶𝗿 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿"
+        "• 𝗟𝘂𝗲𝗴𝗼 𝘂𝘀𝗮 /solicitar 𝗽𝗮𝗿𝗮 𝗽𝗲𝗱𝗶𝗿 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿"
     )
     await update.message.reply_text(mensaje)
 
@@ -104,8 +92,8 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚫 𝗡𝗼 𝗴𝗮𝘆/𝗴𝗼𝗿𝗲/+𝟭𝟴\n"
         "🟢 𝟭𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀\n"
         "🟢 𝗣𝘂𝗲𝗱𝗲𝘀 𝗰𝗼𝗺𝗽𝗮𝗿𝘁𝗶𝗿 𝗲𝗹 𝗯𝗼𝘁\n\n"
-        "• /𝘂𝘀𝘂𝗮𝗿𝗶𝗼𝘀 > 𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲\n"
-        "• /𝗮𝗽𝗼𝗿𝘁𝗲𝘀 > 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼 𝗱𝗶𝗮𝗿𝗶𝗼\n"
+        "• /usuarios > 𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲\n"
+        "• /aportes > 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼 𝗱𝗶𝗮𝗿𝗶𝗼\n"
         "• 𝗘𝗹 𝗯𝗼𝘁 𝘁𝗶𝗲𝗻𝗲 𝘂𝗻 𝘀𝗶𝘀𝘁𝗲𝗺𝗮 𝗮𝗻𝘁𝗶𝗳𝗹𝗼𝗼𝗱 𝗾𝘂𝗲 𝗴𝗲𝗻𝗲𝗿𝗮 𝘂𝗻 𝗿𝗲𝘁𝗿𝗮𝘀𝗼 𝗯𝗿𝗲𝘃𝗲 𝗲𝗻 𝗲𝗹 𝗲𝗻𝘃𝗶́𝗼 𝗱𝗲 𝗺𝘂𝗰𝗵𝗼𝘀 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀"
     )
     msg = await update.message.reply_text(reglas)
