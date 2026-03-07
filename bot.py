@@ -15,13 +15,11 @@ TOKEN = os.getenv("TOKEN")
 MY_ID = int(os.getenv("MY_ID", "0"))
 MONGO_URI = os.getenv("MONGO_URI")
 
-# Conexión a MongoDB
 try:
     client = MongoClient(MONGO_URI)
     db = client['bot_anonimo']
     users_col = db['usuarios']
     files_col = db['archivos_vistos']
-    client.admin.command('ping')
     print("✅ Conexión a MongoDB exitosa")
 except Exception as e:
     print(f"❌ Error MongoDB: {e}")
@@ -94,7 +92,6 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(reglas)
     
-    # Notificación detallada para ti
     mensaje_admin = (
         f"📥 𝗡𝗨𝗘𝗩𝗔 𝗦𝗢𝗟𝗜𝗖𝗜𝗧𝗨𝗗\n\n"
         f"🆔 𝗜𝗗: `{user_id}`\n"
@@ -109,8 +106,6 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if not text: return
-    
-    # Solo tú o el bot pueden mandar estos comandos
     if update.effective_user.id not in [MY_ID, context.bot.id]: return
 
     try:
@@ -119,7 +114,6 @@ async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted"}})
             await update.message.delete()
             await context.bot.send_message(target_id, "¡𝗙𝗲𝗹𝗶𝗰𝗶𝗱𝗮𝗱𝗲𝘀 𝗵𝗮𝘇 𝘀𝗶𝗱𝗼 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼! 𝗖𝗼𝗺𝗽𝗮𝗿𝘁𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗹𝗶𝗯𝗿𝗲𝗺𝗲𝗻𝘁𝗲, 𝗻𝗼 𝘁𝗲 𝗼𝗹𝘃𝗶𝗱𝗲𝘀 𝗱𝗲 𝘀𝗲𝗴𝘂𝗶𝗿 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝘆 𝗱𝗲 𝘁𝘂 𝗮𝗽𝗼𝗿𝘁𝗲 𝗱𝗶𝗮𝗿𝗶𝗼 𝗽𝗮𝗿𝗮 𝗻𝗼 𝘀𝗲𝗿 𝗯𝗮𝗻𝗲𝗮𝗱𝗼!")
-        
         elif "/usuariobaneado" in text:
             target_id = int(text.split("/usuariobaneado")[-1])
             users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
@@ -130,40 +124,45 @@ async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message: return
-    
-    # Detectar comandos de admin primero
     if update.message.text and "/usuario" in update.message.text:
         await admin_control(update, context)
         return
 
     user_id = update.effective_user.id
     user = get_user(user_id)
-    if not user or user["status"] != "accepted": return
-    
-    await check_daily_reset(user_id, user)
-    
-    file_id = None
-    if update.message.photo: file_id = update.message.photo[-1].file_unique_id
-    elif update.message.video: file_id = update.message.video.file_unique_id
+    if not user: return
 
-    if file_id:
-        if files_col.find_one({"file_id": file_id}):
-            await update.message.reply_text("𝘃𝗶𝗱𝗲𝗼 𝗿𝗲𝗽𝗲𝘁𝗶𝗱𝗼")
-            return
-        files_col.insert_one({"file_id": file_id, "user": user_id})
-        users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
+    # Si el usuario es PENDIENTE: Solo sumamos aportes, NO revisamos repetidos
+    if user["status"] == "pending":
+        if update.message.photo or update.message.video:
+            users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
+        return
 
-    # Reenvío
-    for target in users_col.find({"status": "accepted"}):
-        if target["user_id"] == user_id: continue
-        try:
-            if update.message.text:
-                await context.bot.send_message(target["user_id"], f"{update.message.text}\n\n{user['name']}")
-            elif update.message.photo:
-                await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id, caption=user['name'])
-            elif update.message.video:
-                await context.bot.send_video(target["user_id"], update.message.video.file_id, caption=user['name'])
-        except: pass
+    # Si el usuario es ACEPTADO: Aplicamos lógica de repetidos y broadcast
+    if user["status"] == "accepted":
+        await check_daily_reset(user_id, user)
+        
+        file_id = None
+        if update.message.photo: file_id = update.message.photo[-1].file_unique_id
+        elif update.message.video: file_id = update.message.video.file_unique_id
+
+        if file_id:
+            if files_col.find_one({"file_id": file_id}):
+                await update.message.reply_text("𝘃𝗶𝗱𝗲𝗼 𝗿𝗲𝗽𝗲𝘁𝗶𝗱𝗼")
+                return
+            files_col.insert_one({"file_id": file_id, "user": user_id})
+            users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
+
+        for target in users_col.find({"status": "accepted"}):
+            if target["user_id"] == user_id: continue
+            try:
+                if update.message.text:
+                    await context.bot.send_message(target["user_id"], f"{update.message.text}\n\n{user['name']}")
+                elif update.message.photo:
+                    await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id, caption=user['name'])
+                elif update.message.video:
+                    await context.bot.send_video(target["user_id"], update.message.video.file_id, caption=user['name'])
+            except: pass
 
 async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -178,24 +177,19 @@ async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲: {count}")
     elif "/aportes" in text:
         ap = await check_daily_reset(user_id, user)
-        faltan = max(0, 10 - ap)
+        # Si es pendiente, mostramos progreso hacia los 100. Si es aceptado, hacia los 10.
+        objetivo = 100 if user["status"] == "pending" else 10
+        faltan = max(0, objetivo - ap)
         status = "𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗼 ✅" if faltan == 0 else f"𝗧𝗲 𝗳𝗮𝗹𝘁𝗮𝗻 {faltan} 𝗮𝗽𝗼𝗿𝘁𝗲𝘀."
-        await update.message.reply_text(f"𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼: {ap}/𝟭𝟬\n{status}")
+        await update.message.reply_text(f"𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼: {ap}/{objetivo}\n{status}")
 
 def main():
-    if not TOKEN:
-        print("❌ Error: TOKEN no encontrado")
-        return
-
     threading.Thread(target=run_web_server, daemon=True).start()
     app = Application.builder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("solicitar", solicitar))
     app.add_handler(CommandHandler(["user", "usuarios", "aportes"], commands_user))
     app.add_handler(MessageHandler(filters.ALL, handle_broadcast))
-    
-    print("🤖 Bot iniciado...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
