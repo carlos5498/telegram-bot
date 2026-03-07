@@ -66,9 +66,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "last_reset": str(datetime.date.today())
         })
     
-    # Mensaje de bienvenida con comandos clicables (fuente normal)
     bienvenida = (
-        "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼́𝗻𝗶𝗺𝗮.\n\n"
+        "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗼𝘀 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼́𝗻𝗶𝗺𝗮.\n\n"
         "𝗣𝗮𝗿𝗮 𝗽𝗼𝗱𝗲𝗿 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼 𝗽𝗼𝗿 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿.\n\n"
         "• 𝗘𝗻𝘃𝗶́𝗮 𝟭𝟬𝟬 𝗺𝘂𝗹𝘁𝗶𝗺𝗲𝗱𝗶𝗮 (𝗳𝗼𝘁𝗼𝘀/𝘃𝗶𝗱𝗲𝗼𝘀) 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.\n"
         "• 𝗟𝘂𝗲𝗴𝗼 𝘂𝘀𝗮 /solicitar 𝗽𝗮𝗿𝗮 𝗽𝗲𝗱𝗶𝗿 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿."
@@ -96,7 +95,6 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(reglas)
     
-    # Notificación para el Admin
     mensaje_admin = (
         f"📥 𝗡𝗨𝗘𝗩𝗔 𝗦𝗢𝗟𝗜𝗖𝗜𝗧𝗨𝗗\n\n"
         f"🆔 𝗜𝗗: `{user_id}`\n"
@@ -129,7 +127,7 @@ async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message: return
     
-    # Procesar comandos de admin primero
+    # Comandos de admin
     if update.message.text and "/usuario" in update.message.text:
         await admin_control(update, context)
         return
@@ -138,42 +136,57 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(user_id)
     if not user: return
 
-    # LÓGICA PARA USUARIOS PENDIENTES
+    # --- LÓGICA DE CONTEO INDIVIDUAL ---
+    is_media = bool(update.message.photo or update.message.video)
+
+    # Usuarios pendientes: Cuentan cada archivo del álbum por separado
     if user["status"] == "pending":
-        if update.message.photo or update.message.video:
+        if is_media:
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
-            # Mensaje opcional al llegar a 100
-            current_ap = user.get("aportes", 0) + 1
-            if current_ap == 100:
+            # Refrescamos datos para ver si llegó a 100
+            updated_user = get_user(user_id)
+            if updated_user.get("aportes", 0) == 100:
                 await update.message.reply_text("✨ ¡𝗛𝗮𝘀 𝗹𝗹𝗲𝗴𝗮𝗱𝗼 𝗮 𝗹𝗼𝘀 𝟭𝟬𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀! 𝗬𝗮 𝗽𝘂𝗲𝗱𝗲𝘀 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗰𝗼𝗺𝗮𝗻𝗱𝗼 /solicitar")
         return
 
-    # LÓGICA PARA USUARIOS ACEPTADOS
+    # Usuarios aceptados: Filtro de repetidos y broadcast
     if user["status"] == "accepted":
         await check_daily_reset(user_id, user)
         file_id = None
-        if update.message.photo: file_id = update.message.photo[-1].file_unique_id
-        elif update.message.video: file_id = update.message.video.file_unique_id
+        
+        if update.message.photo: 
+            file_id = update.message.photo[-1].file_unique_id
+            raw_id = update.message.photo[-1].file_id
+        elif update.message.video: 
+            file_id = update.message.video.file_unique_id
+            raw_id = update.message.video.file_id
 
-        # Solo aquí revisamos y guardamos repetidos
         if file_id:
             if files_col.find_one({"file_id": file_id}):
+                # Solo avisamos si no es un álbum para no saturar, o avisamos igual
                 await update.message.reply_text("𝘃𝗶𝗱𝗲𝗼 𝗿𝗲𝗽𝗲𝘁𝗶𝗱𝗼")
                 return
+            
             files_col.insert_one({"file_id": file_id, "user": user_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
-        # Reenvío a los demás
-        for target in users_col.find({"status": "accepted"}):
-            if target["user_id"] == user_id: continue
-            try:
-                if update.message.text:
+            # Reenvío
+            for target in users_col.find({"status": "accepted"}):
+                if target["user_id"] == user_id: continue
+                try:
+                    if update.message.photo:
+                        await context.bot.send_photo(target["user_id"], raw_id, caption=user['name'])
+                    elif update.message.video:
+                        await context.bot.send_video(target["user_id"], raw_id, caption=user['name'])
+                except: pass
+        
+        # Si es solo texto
+        elif update.message.text:
+            for target in users_col.find({"status": "accepted"}):
+                if target["user_id"] == user_id: continue
+                try:
                     await context.bot.send_message(target["user_id"], f"{update.message.text}\n\n{user['name']}")
-                elif update.message.photo:
-                    await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id, caption=user['name'])
-                elif update.message.video:
-                    await context.bot.send_video(target["user_id"], update.message.video.file_id, caption=user['name'])
-            except: pass
+                except: pass
 
 async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
