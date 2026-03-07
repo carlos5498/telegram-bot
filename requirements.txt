@@ -1,3 +1,3 @@
-python-telegram-bot[all]
+python-telegram-bot
 pymongo
 dnspython
