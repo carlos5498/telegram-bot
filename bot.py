@@ -8,7 +8,7 @@ from pymongo import MongoClient
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- LOGS ---
+# --- CONFIGURACIÓN ---
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TOKEN")
@@ -24,7 +24,7 @@ files_col = db['archivos_vistos']
 ADJETIVOS = ["Bravo", "Veloz", "Oscuro", "Místico", "Feroz", "Silencioso", "Letal"]
 ANIMALES = ["Lobo", "Zorro", "Halcón", "Tigre", "Puma", "Serpiente", "Águila"]
 
-# --- SERVIDOR WEB ---
+# --- SERVIDOR WEB (Obligatorio para Render) ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
@@ -49,19 +49,18 @@ async def check_daily_reset(user_id, user_data):
     return user_data.get("aportes", 0)
 
 # --- MANEJADORES ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = get_user(user_id)
-    
     if not user:
-        new_user = {
+        users_col.insert_one({
             "user_id": user_id,
             "name": generate_anon_name(),
             "status": "pending",
             "aportes": 0,
             "last_reset": str(datetime.date.today())
-        }
-        users_col.insert_one(new_user)
+        })
     
     await update.message.reply_text(
         "¡Bienvenido! Este es un bot beta para enviar mensajes e intercambios de contenido de manera anónima.\n\n"
@@ -85,36 +84,36 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(reglas)
     
-    # Notificar al Admin real (Tú)
-    await context.bot.send_message(MY_ID, f"SOLICITUD:\nID: `{user_id}`\nNombre: {user['name']}\n\nComandos para copiar/pegar:\n`/usuarioaceptado{user_id}`\n`/usuariobaneado{user_id}`")
+    # Notificar al Admin para que vea el comando en Telegraph
+    await context.bot.send_message(MY_ID, f"SOLICITUD: {user_id}\nNombre: {user['name']}\n\n`/usuarioaceptado{user_id}`\n`/usuariobaneado{user_id}`")
 
 async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Detecta si el mensaje viene de TI o si el BOT se está enviando el mensaje a sí mismo (Telegraph)
-    bot_id = context.bot.id
-    user_id = update.effective_user.id
     text = update.message.text
+    bot_id = context.bot.id
+    sender_id = update.effective_user.id
 
-    if user_id == MY_ID or user_id == bot_id:
+    # Solo funciona si lo envías tú (MY_ID) o el propio BOT (vía Telegraph)
+    if sender_id == MY_ID or sender_id == bot_id:
         try:
             if "/usuarioaceptado" in text:
-                uid = int(text.replace("/usuarioaceptado", ""))
-                users_col.update_one({"user_id": uid}, {"$set": {"status": "accepted"}})
-                await update.message.delete() # Borra el comando
-                await context.bot.send_message(uid, "Felicidades haz sido aceptado! Comparte contenido libremente, no te olvides de seguir las reglas y de tu aporte diario para no ser baneado!")
+                target_id = int(text.replace("/usuarioaceptado", ""))
+                users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted"}})
+                await update.message.delete()
+                await context.bot.send_message(target_id, "Felicidades haz sido aceptado! Comparte contenido libremente, no te olvides de seguir las reglas y de tu aporte diario para no ser baneado!")
             
             elif "/usuariobaneado" in text:
-                uid = int(text.replace("/usuariobaneado", ""))
-                users_col.update_one({"user_id": uid}, {"$set": {"status": "banned"}})
-                await update.message.delete() # Borra el comando
-                await context.bot.send_message(uid, "Haz sido betado del bot, por incumplir alguna regla o no haber cumplido con tus aportes diarios, por ahora no hay forma de regresar!")
+                target_id = int(text.replace("/usuariobaneado", ""))
+                users_col.update_one({"user_id": target_id}, {"$set": {"status": "banned"}})
+                await update.message.delete()
+                await context.bot.send_message(target_id, "Haz sido betado del bot, por incumplir alguna regla o no haber cumplido con tus aportes diarios, por ahora no hay forma de regresar!")
         except Exception as e:
-            logging.error(f"Error en comando admin: {e}")
+            logging.error(f"Error en admin_control: {e}")
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = get_user(user_id)
     
-    # Si no está aceptado, no hace nada (no reenvía)
+    # Solo procesa si el usuario está aceptado
     if not user or user["status"] != "accepted": return
     
     await check_daily_reset(user_id, user)
@@ -123,7 +122,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo: file_id = update.message.photo[-1].file_unique_id
     elif update.message.video: file_id = update.message.video.file_unique_id
 
-    # Anti-repetidos
+    # Lógica Anti-repetidos
     if file_id:
         if files_col.find_one({"file_id": file_id}):
             await update.message.reply_text("video repetido")
@@ -131,7 +130,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         files_col.insert_one({"file_id": file_id, "user": user_id})
         users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
-    # Reenvío a los demás
+    # Reenvío a todos los usuarios aceptados
     for target in users_col.find({"status": "accepted"}):
         if target["user_id"] == user_id: continue
         try:
@@ -147,13 +146,14 @@ async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = get_user(user_id)
     if not user: return
-
-    if "/user" in update.message.text:
+    
+    text = update.message.text
+    if "/user" in text:
         await update.message.reply_text(f"Tu nombre anónimo es: {user['name']}")
-    elif "/usuarios" in update.message.text:
+    elif "/usuarios" in text:
         count = users_col.count_documents({"status": "accepted"})
         await update.message.reply_text(f"Usuarios activos actualmente: {count}")
-    elif "/aportes" in update.message.text:
+    elif "/aportes" in text:
         ap = await check_daily_reset(user_id, user)
         faltan = max(0, 10 - ap)
         status = "Completado ✅" if faltan == 0 else f"Te faltan {faltan} aportes."
@@ -166,13 +166,16 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("solicitar", solicitar))
     
-    # Este manejador detecta los comandos de aceptación/baneo enviados por el bot/admin
+    # Manejador para los comandos de aceptación/baneo
     app.add_handler(MessageHandler(filters.Regex(r'^/usuario(aceptado|baneado)'), admin_control))
     
     app.add_handler(CommandHandler(["user", "usuarios", "aportes"], commands_user))
+    
+    # Manejador de contenido multimedia y texto para broadcast
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO | filters.VIDEO) & ~filters.COMMAND, handle_broadcast))
     
-    app.run_polling()
+    # AJUSTE PARA TELEGRAPH: Permite que el bot procese sus propios mensajes
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
