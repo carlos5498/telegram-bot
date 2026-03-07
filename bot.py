@@ -1,7 +1,6 @@
 import os
 import logging
 import threading
-import random
 import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pymongo import MongoClient
@@ -24,9 +23,6 @@ try:
 except Exception as e:
     print(f"❌ Error MongoDB: {e}")
 
-ADJETIVOS = ["Bravo", "Veloz", "Oscuro", "Místico", "Feroz", "Silencioso", "Letal"]
-ANIMALES = ["Lobo", "Zorro", "Halcón", "Tigre", "Puma", "Serpiente", "Águila"]
-
 # --- SERVIDOR WEB ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -41,9 +37,6 @@ def run_web_server():
 # --- FUNCIONES AUXILIARES ---
 def get_user(user_id):
     return users_col.find_one({"user_id": user_id})
-
-def generate_anon_name():
-    return f"{random.choice(ANIMALES)} {random.choice(ADJETIVOS)} {random.randint(10, 99)}"
 
 async def check_daily_reset(user_id, user_data):
     today = str(datetime.date.today())
@@ -60,13 +53,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         users_col.insert_one({
             "user_id": user_id,
-            "name": generate_anon_name(),
             "status": "pending",
             "aportes": 0,
             "last_reset": str(datetime.date.today())
         })
     
-    # Mensaje de bienvenida ampliado y con comandos clicables
     bienvenida = (
         "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼́𝗻𝗶𝗺𝗮.\n\n"
         "𝗣𝗮𝗿𝗮 𝗽𝗼𝗱𝗲𝗿 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼 𝗽𝗼𝗿 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿.\n\n"
@@ -78,7 +69,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_data = update.effective_user
-    user_db = get_user(user_id)
     
     real_name = user_data.full_name
     username = f"@{user_data.username}" if user_data.username else "No tiene @"
@@ -88,20 +78,24 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reglas = (
         f"𝗠𝗶𝗲𝗻𝘁𝗿𝗮𝘀 𝗲𝘀𝗽𝗲𝗿𝗮𝘀 𝗟𝗲𝗲 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀:\n\n"
         f"🚫 𝗡𝗼 𝗴𝗮𝘆/𝗴𝗼𝗿𝗲/+𝟭𝟴\n"
-        f"🟢 𝟭𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀\n"
-        f"🟢 𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲: {user_db['name']}\n\n"
-        f"• /user: 𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲\n"
+        f"🟢 𝟭𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀\n\n"
         f"• /usuarios: 𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲\n"
         f"• /aportes: 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼"
     )
-    await update.message.reply_text(reglas)
+    # Enviamos el mensaje de reglas
+    msg_reglas = await update.message.reply_text(reglas)
+    
+    # Intentamos fijar el mensaje de reglas en el chat del usuario
+    try:
+        await context.bot.pin_chat_message(chat_id=user_id, message_id=msg_reglas.message_id)
+    except Exception as e:
+        logging.warning(f"No se pudo fijar el mensaje: {e}")
     
     mensaje_admin = (
         f"📥 𝗡𝗨𝗘𝗩𝗔 𝗦𝗢𝗟𝗜𝗖𝗜𝗧𝗨𝗗\n\n"
         f"🆔 𝗜𝗗: `{user_id}`\n"
         f"👤 𝗡𝗼𝗺𝗯𝗿𝗲: {real_name}\n"
-        f"🔗 𝗨𝘀𝘂𝗮𝗿𝗶𝗼: {username}\n"
-        f"🎭 𝗔𝗻𝗼́𝗻𝗶𝗺𝗼: {user_db['name']}\n\n"
+        f"🔗 𝗨𝘀𝘂𝗮𝗿𝗶𝗼: {username}\n\n"
         f"𝗖𝗼𝗺𝗮𝗻𝗱𝗼𝘀:\n`/usuarioaceptado{user_id}`\n"
         f"`/usuariobaneado{user_id}`"
     )
@@ -135,13 +129,11 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(user_id)
     if not user: return
 
-    # Usuarios pendientes: No hay filtro de repetidos
     if user["status"] == "pending":
         if update.message.photo or update.message.video:
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
         return
 
-    # Usuarios aceptados: Filtro de repetidos y broadcast activo
     if user["status"] == "accepted":
         await check_daily_reset(user_id, user)
         file_id = None
@@ -159,11 +151,11 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if target["user_id"] == user_id: continue
             try:
                 if update.message.text:
-                    await context.bot.send_message(target["user_id"], f"{update.message.text}\n\n{user['name']}")
+                    await context.bot.send_message(target["user_id"], update.message.text)
                 elif update.message.photo:
-                    await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id, caption=user['name'])
+                    await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id, caption=update.message.caption)
                 elif update.message.video:
-                    await context.bot.send_video(target["user_id"], update.message.video.file_id, caption=user['name'])
+                    await context.bot.send_video(target["user_id"], update.message.video.file_id, caption=update.message.caption)
             except: pass
 
 async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -172,9 +164,7 @@ async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user: return
     
     text = update.message.text
-    if "/user" in text:
-        await update.message.reply_text(f"𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲 𝗮𝗻𝗼́𝗻𝗶𝗺𝗼 𝗲𝘀: {user['name']}")
-    elif "/usuarios" in text:
+    if "/usuarios" in text:
         count = users_col.count_documents({"status": "accepted"})
         await update.message.reply_text(f"𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲: {count}")
     elif "/aportes" in text:
@@ -189,7 +179,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("solicitar", solicitar))
-    app.add_handler(CommandHandler(["user", "usuarios", "aportes"], commands_user))
+    app.add_handler(CommandHandler(["usuarios", "aportes"], commands_user))
     app.add_handler(MessageHandler(filters.ALL, handle_broadcast))
     app.run_polling(drop_pending_updates=True)
 
