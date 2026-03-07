@@ -29,7 +29,7 @@ lock = asyncio.Lock()
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Running - Version Exacta")
+        self.wfile.write(b"Bot Running - Version Final Integrada")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -80,21 +80,26 @@ async def procesar_y_enviar_album(context, mg_id):
             await asyncio.sleep(0.1)
         except: pass
 
-# --- MANEJADORES CON TEXTOS DE CAPTURAS ---
+# --- MANEJADORES ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not users_col.find_one({"user_id": user_id}):
         users_col.insert_one({"user_id": user_id, "status": "pending", "aportes": 0, "last_reset": str(datetime.date.today())})
-    # Texto idéntico a captura 1000214051.jpg
-    await update.message.reply_text("¡Bienvenido! Envía aportes o usa la contraseña para entrar.")
+    
+    # MENSAJE EXACTO SOLICITADO
+    mensaje = (
+        "**¡Bienvenido! Este es un bot beta para enviar mensajes e intercambiar contenido de manera anonima.**\n\n"
+        "**Para poder usar el bot debes ser aceptado por un administrador**\n\n"
+        "**• Envia 100 multimedia (fotos/videos) de contenido para ser aceptado.**\n"
+        "**• Luego usa** /solicitar **para pedir acceso a un administrador**"
+    )
+    await update.message.reply_text(mensaje, parse_mode="Markdown")
 
 async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    # Respuesta confirmando solicitud (Captura 1000214045.jpg)
     await update.message.reply_text("¡Has solicitado acceso a un administrador! Se te notificará cuando seas aceptado.")
     
-    # Respuesta con reglas y sistema antiflood en negrita
     reglas = (
         "Mientras esperas Lee las reglas:\n\n"
         "🚫 No gay/gore/+18\n"
@@ -105,7 +110,6 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await context.bot.pin_chat_message(chat_id=user_id, message_id=msg.message_id)
     except: pass
     
-    # Aviso al Admin
     await context.bot.send_message(MY_ID, f"📥 Solicitud: {user_id}\n`/usuarioaceptado{user_id}`")
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,7 +118,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or update.message.caption or ""
     config = get_config()
 
-    # Anti-Spam de enlaces
+    # Anti-Spam
     if re.search(r"(http://|https://|t\.me/|\.com)", text.lower()) and user_id != MY_ID:
         return await update.message.reply_text("🚫 No se permiten enlaces.")
 
@@ -122,7 +126,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == ADMIN_PASSWORD and user_id == MY_ID:
         return await update.message.reply_text("🔑 **PANEL ADMIN**\n/reset | /mensaje | /stop | /revocar | /nuevapass", parse_mode="Markdown")
 
-    # Contraseña de usuario
+    # Contraseña directa
     if text == config["auto_pass"] and config["pass_active"]:
         users_col.update_one({"user_id": user_id}, {"$set": {"status": "accepted", "aportes": 0, "last_reset": str(datetime.date.today())}})
         return await update.message.reply_text("✅ ¡Acceso concedido!")
@@ -130,7 +134,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = users_col.find_one({"user_id": user_id})
     if not user or user.get("status") == "banned": return
 
-    # Lógica /mensaje con respuesta en negrita
+    # Lógica de Difusión
     if user_id == MY_ID:
         if text == "/mensaje":
             context.user_data['wait_msg'] = True
@@ -149,7 +153,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files_col.delete_many({})
             return await update.message.reply_text(f"✅ Reset completado. Baneados: {baneados}")
 
-    # Reenvío General para Usuarios Aceptados
+    # Reenvío de Usuarios Aceptados
     if user["status"] == "accepted":
         if config["paused"] and user_id != MY_ID: return
         if await check_daily_reset(user_id, user, context): return
