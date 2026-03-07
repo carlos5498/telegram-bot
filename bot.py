@@ -29,7 +29,7 @@ lock = asyncio.Lock()
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b"Bot Running - Todo Actualizado")
+        self.wfile.write(b"Bot Running - Version Exacta")
 
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
@@ -68,7 +68,6 @@ def get_config():
         return default
     return config
 
-# --- PROCESAMIENTO DE ÁLBUMES ---
 async def procesar_y_enviar_album(context, mg_id):
     await asyncio.sleep(5)
     async with lock:
@@ -81,20 +80,21 @@ async def procesar_y_enviar_album(context, mg_id):
             await asyncio.sleep(0.1)
         except: pass
 
-# --- MANEJADORES ---
+# --- MANEJADORES CON TEXTOS DE CAPTURAS ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not users_col.find_one({"user_id": user_id}):
         users_col.insert_one({"user_id": user_id, "status": "pending", "aportes": 0, "last_reset": str(datetime.date.today())})
+    # Texto idéntico a captura 1000214051.jpg
     await update.message.reply_text("¡Bienvenido! Envía aportes o usa la contraseña para entrar.")
 
 async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    # Respuesta confirmando solicitud
+    # Respuesta confirmando solicitud (Captura 1000214045.jpg)
     await update.message.reply_text("¡Has solicitado acceso a un administrador! Se te notificará cuando seas aceptado.")
     
-    # Respuesta con las reglas actualizadas
+    # Respuesta con reglas y sistema antiflood en negrita
     reglas = (
         "Mientras esperas Lee las reglas:\n\n"
         "🚫 No gay/gore/+18\n"
@@ -114,14 +114,15 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or update.message.caption or ""
     config = get_config()
 
-    # Anti-Spam
+    # Anti-Spam de enlaces
     if re.search(r"(http://|https://|t\.me/|\.com)", text.lower()) and user_id != MY_ID:
         return await update.message.reply_text("🚫 No se permiten enlaces.")
 
-    # Panel Admin y Contraseña
+    # Panel Admin
     if text == ADMIN_PASSWORD and user_id == MY_ID:
         return await update.message.reply_text("🔑 **PANEL ADMIN**\n/reset | /mensaje | /stop | /revocar | /nuevapass", parse_mode="Markdown")
 
+    # Contraseña de usuario
     if text == config["auto_pass"] and config["pass_active"]:
         users_col.update_one({"user_id": user_id}, {"$set": {"status": "accepted", "aportes": 0, "last_reset": str(datetime.date.today())}})
         return await update.message.reply_text("✅ ¡Acceso concedido!")
@@ -129,7 +130,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = users_col.find_one({"user_id": user_id})
     if not user or user.get("status") == "banned": return
 
-    # Lógica de Difusión (/mensaje)
+    # Lógica /mensaje con respuesta en negrita
     if user_id == MY_ID:
         if text == "/mensaje":
             context.user_data['wait_msg'] = True
@@ -146,9 +147,9 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text == "/reset":
             baneados = await ejecutar_limpieza_inactividad(context)
             files_col.delete_many({})
-            return await update.message.reply_text(f"✅ Reset. Baneados: {baneados}")
+            return await update.message.reply_text(f"✅ Reset completado. Baneados: {baneados}")
 
-    # Reenvío de Usuarios Aceptados
+    # Reenvío General para Usuarios Aceptados
     if user["status"] == "accepted":
         if config["paused"] and user_id != MY_ID: return
         if await check_daily_reset(user_id, user, context): return
