@@ -66,10 +66,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "last_reset": str(datetime.date.today())
         })
     
-    await update.message.reply_text(
-        "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗼𝘀 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼́𝗻𝗶𝗺𝗮.\n\n"
-        "𝗘𝗻𝘃𝗶́𝗮 𝟭𝟬𝟬 𝗳𝗼𝘁𝗼𝘀/𝘃𝗶𝗱𝗲𝗼𝘀 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼. 𝗟𝘂𝗲𝗴𝗼 𝘂𝘀𝗮 /𝘀𝗼𝗹𝗶𝗰𝗶𝘁𝗮𝗿 𝗽𝗮𝗿𝗮 𝗽𝗲𝗱𝗶𝗿 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿."
+    # Mensaje de bienvenida ampliado y con comandos clicables
+    bienvenida = (
+        "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼́𝗻𝗶𝗺𝗮.\n\n"
+        "𝗣𝗮𝗿𝗮 𝗽𝗼𝗱𝗲𝗿 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼 𝗽𝗼𝗿 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿.\n\n"
+        "• 𝗘𝗻𝘃𝗶́𝗮 𝟭𝟬𝟬 𝗺𝘂𝗹𝘁𝗶𝗺𝗲𝗱𝗶𝗮 (𝗳𝗼𝘁𝗼𝘀/𝘃𝗶𝗱𝗲𝗼𝘀) 𝗱𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗽𝗮𝗿𝗮 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.\n"
+        "• 𝗟𝘂𝗲𝗴𝗼 𝘂𝘀𝗮 /solicitar 𝗽𝗮𝗿𝗮 𝗽𝗲𝗱𝗶𝗿 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿."
     )
+    await update.message.reply_text(bienvenida)
 
 async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -82,13 +86,13 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("¡𝗛𝗮𝘀 𝘀𝗼𝗹𝗶𝗰𝗶𝘁𝗮𝗱𝗼 𝗮𝗰𝗰𝗲𝘀𝗼 𝗮 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿! 𝗦𝗲 𝘁𝗲 𝗻𝗼𝘁𝗶𝗳𝗶𝗰𝗮𝗿𝗮́ 𝗰𝘂𝗮𝗻𝗱𝗼 𝘀𝗲𝗮𝘀 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼.")
     
     reglas = (
-        f"𝗠𝗶𝗲𝗻𝘁𝗿𝗮𝘀 𝗲𝘀𝗽𝗲𝗿𝗮𝘀 𝗟𝗲𝗲 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀:\n"
+        f"𝗠𝗶𝗲𝗻𝘁𝗿𝗮𝘀 𝗲𝘀𝗽𝗲𝗿𝗮𝘀 𝗟𝗲𝗲 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀:\n\n"
         f"🚫 𝗡𝗼 𝗴𝗮𝘆/𝗴𝗼𝗿𝗲/+𝟭𝟴\n"
         f"🟢 𝟭𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀 𝗱𝗶𝗮𝗿𝗶𝗼𝘀\n"
-        f"🟢 𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲: {user_db['name']}\n"
-        f"• /𝘂𝘀𝗲𝗿: 𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲\n"
-        f"• /𝘂𝘀𝘂𝗮𝗿𝗶𝗼𝘀: 𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲\n"
-        f"• /𝗮𝗽𝗼𝗿𝘁𝗲𝘀: 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼"
+        f"🟢 𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲: {user_db['name']}\n\n"
+        f"• /user: 𝗧𝘂 𝗻𝗼𝗺𝗯𝗿𝗲\n"
+        f"• /usuarios: 𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲\n"
+        f"• /aportes: 𝗧𝘂 𝗽𝗿𝗼𝗴𝗿𝗲𝘀𝗼 𝗱𝗶𝗮𝗿𝗶𝗼"
     )
     await update.message.reply_text(reglas)
     
@@ -105,8 +109,7 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if not text: return
-    if update.effective_user.id not in [MY_ID, context.bot.id]: return
+    if not text or update.effective_user.id not in [MY_ID, context.bot.id]: return
 
     try:
         if "/usuarioaceptado" in text:
@@ -132,16 +135,15 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(user_id)
     if not user: return
 
-    # Si el usuario es PENDIENTE: Solo sumamos aportes, NO revisamos repetidos
+    # Usuarios pendientes: No hay filtro de repetidos
     if user["status"] == "pending":
         if update.message.photo or update.message.video:
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
         return
 
-    # Si el usuario es ACEPTADO: Aplicamos lógica de repetidos y broadcast
+    # Usuarios aceptados: Filtro de repetidos y broadcast activo
     if user["status"] == "accepted":
         await check_daily_reset(user_id, user)
-        
         file_id = None
         if update.message.photo: file_id = update.message.photo[-1].file_unique_id
         elif update.message.video: file_id = update.message.video.file_unique_id
@@ -177,7 +179,6 @@ async def commands_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"𝗨𝘀𝘂𝗮𝗿𝗶𝗼𝘀 𝗮𝗰𝘁𝗶𝘃𝗼𝘀 𝗮𝗰𝘁𝘂𝗮𝗹𝗺𝗲𝗻𝘁𝗲: {count}")
     elif "/aportes" in text:
         ap = await check_daily_reset(user_id, user)
-        # Si es pendiente, mostramos progreso hacia los 100. Si es aceptado, hacia los 10.
         objetivo = 100 if user["status"] == "pending" else 10
         faltan = max(0, objetivo - ap)
         status = "𝗖𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗼 ✅" if faltan == 0 else f"𝗧𝗲 𝗳𝗮𝗹𝘁𝗮𝗻 {faltan} 𝗮𝗽𝗼𝗿𝘁𝗲𝘀."
