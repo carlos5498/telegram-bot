@@ -70,7 +70,7 @@ def get_config():
 
 # --- PROCESAMIENTO DE ÁLBUMES (CORREGIDO) ---
 async def procesar_y_enviar_album(context, mg_id):
-    await asyncio.sleep(5)
+    await asyncio.sleep(4) # Tiempo de espera para recolectar el álbum completo
     async with lock:
         data = ALBUMES_COLA.pop(mg_id, None)
     if not data: return
@@ -138,7 +138,6 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text == "/mensaje":
             context.user_data['wait_msg'] = True
             return await update.message.reply_text("📢 **𝗠𝗢𝗗𝗢 𝗗𝗜𝗙𝗨𝗦𝗜𝗢́𝗡 𝗔𝗖𝗧𝗜𝗩𝗔𝗗𝗢**\n𝗘𝗻𝘃𝗶́𝗲 𝗲𝗹 𝗺𝗲𝗻𝘀𝗮𝗷𝗲 𝗮𝗵𝗼𝗿𝗮.", parse_mode="Markdown")
-
         if context.user_data.get('wait_msg'):
             context.user_data['wait_msg'] = False
             for t in users_col.find({"status": "accepted"}):
@@ -147,7 +146,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except: pass
             return await update.message.reply_text("🚀 𝗗𝗶𝗳𝘂𝘀𝗶𝗼́𝗻 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗮𝗱𝗮.")
 
-    # Reenvío con soporte para ÁLBUMES
+    # REENVÍO CON LÓGICA DE ÁLBUMES
     if user["status"] == "accepted":
         if config["paused"] and user_id != MY_ID: return
         if await check_daily_reset(user_id, user, context): return
@@ -167,15 +166,17 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files_col.insert_one({"file_id": file_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
-            if update.message.media_group_id:
-                mg_id = update.message.media_group_id
+            # Si es parte de un álbum (Media Group)
+            mg_id = update.message.media_group_id
+            if mg_id:
                 async with lock:
                     if mg_id not in ALBUMES_COLA:
                         ALBUMES_COLA[mg_id] = {'sender_id': user_id, 'media': []}
                         asyncio.create_task(procesar_y_enviar_album(context, mg_id))
                     ALBUMES_COLA[mg_id]['media'].append(media_obj)
-                return
+                return # IMPORTANTE: Detenemos el flujo aquí para que no se envíe individualmente
 
+        # Reenvío de mensajes individuales (texto o multimedia suelta)
         for target in users_col.find({"status": "accepted"}):
             if target["user_id"] == user_id: continue
             try:
