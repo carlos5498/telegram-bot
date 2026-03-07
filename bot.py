@@ -27,7 +27,7 @@ except Exception as e:
 ADJETIVOS = ["Bravo", "Veloz", "Oscuro", "Místico", "Feroz", "Silencioso", "Letal"]
 ANIMALES = ["Lobo", "Zorro", "Halcón", "Tigre", "Puma", "Serpiente", "Águila"]
 
-# --- SERVIDOR WEB ---
+# --- SERVIDOR WEB (Render) ---
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
@@ -66,7 +66,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "last_reset": str(datetime.date.today())
         })
     
-    # Mensaje de bienvenida ampliado y con comandos clicables
+    # Mensaje de bienvenida con comandos clicables (fuente normal)
     bienvenida = (
         "¡𝗕𝗶𝗲𝗻𝘃𝗲𝗻𝗶𝗱𝗼! 𝗘𝘀𝘁𝗲 𝗲𝘀 𝘂𝗻 𝗯𝗼𝘁 𝗯𝗲𝘁𝗮 𝗽𝗮𝗿𝗮 𝗲𝗻𝘃𝗶𝗮𝗿 𝗺𝗲𝗻𝘀𝗮𝗷𝗲𝘀 𝗲 𝗶𝗻𝘁𝗲𝗿𝗰𝗮𝗺𝗯𝗶𝗮𝗿 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗱𝗲 𝗺𝗮𝗻𝗲𝗿𝗮 𝗮𝗻𝗼́𝗻𝗶𝗺𝗮.\n\n"
         "𝗣𝗮𝗿𝗮 𝗽𝗼𝗱𝗲𝗿 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗯𝗼𝘁 𝗱𝗲𝗯𝗲𝘀 𝘀𝗲𝗿 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼 𝗽𝗼𝗿 𝘂𝗻 𝗮𝗱𝗺𝗶𝗻𝗶𝘀𝘁𝗿𝗮𝗱𝗼𝗿.\n\n"
@@ -96,6 +96,7 @@ async def solicitar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(reglas)
     
+    # Notificación para el Admin
     mensaje_admin = (
         f"📥 𝗡𝗨𝗘𝗩𝗔 𝗦𝗢𝗟𝗜𝗖𝗜𝗧𝗨𝗗\n\n"
         f"🆔 𝗜𝗗: `{user_id}`\n"
@@ -114,7 +115,7 @@ async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if "/usuarioaceptado" in text:
             target_id = int(text.split("/usuarioaceptado")[-1])
-            users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted"}})
+            users_col.update_one({"user_id": target_id}, {"$set": {"status": "accepted", "aportes": 0}})
             await update.message.delete()
             await context.bot.send_message(target_id, "¡𝗙𝗲𝗹𝗶𝗰𝗶𝗱𝗮𝗱𝗲𝘀 𝗵𝗮𝘇 𝘀𝗶𝗱𝗼 𝗮𝗰𝗲𝗽𝘁𝗮𝗱𝗼! 𝗖𝗼𝗺𝗽𝗮𝗿𝘁𝗲 𝗰𝗼𝗻𝘁𝗲𝗻𝗶𝗱𝗼 𝗹𝗶𝗯𝗿𝗲𝗺𝗲𝗻𝘁𝗲, 𝗻𝗼 𝘁𝗲 𝗼𝗹𝘃𝗶𝗱𝗲𝘀 𝗱𝗲 𝘀𝗲𝗴𝘂𝗶𝗿 𝗹𝗮𝘀 𝗿𝗲𝗴𝗹𝗮𝘀 𝘆 𝗱𝗲 𝘁𝘂 𝗮𝗽𝗼𝗿𝘁𝗲 𝗱𝗶𝗮𝗿𝗶𝗼 𝗽𝗮𝗿𝗮 𝗻𝗼 𝘀𝗲𝗿 𝗯𝗮𝗻𝗲𝗮𝗱𝗼!")
         elif "/usuariobaneado" in text:
@@ -127,6 +128,8 @@ async def admin_control(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message: return
+    
+    # Procesar comandos de admin primero
     if update.message.text and "/usuario" in update.message.text:
         await admin_control(update, context)
         return
@@ -135,19 +138,24 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(user_id)
     if not user: return
 
-    # Usuarios pendientes: No hay filtro de repetidos
+    # LÓGICA PARA USUARIOS PENDIENTES
     if user["status"] == "pending":
         if update.message.photo or update.message.video:
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
+            # Mensaje opcional al llegar a 100
+            current_ap = user.get("aportes", 0) + 1
+            if current_ap == 100:
+                await update.message.reply_text("✨ ¡𝗛𝗮𝘀 𝗹𝗹𝗲𝗴𝗮𝗱𝗼 𝗮 𝗹𝗼𝘀 𝟭𝟬𝟬 𝗮𝗽𝗼𝗿𝘁𝗲𝘀! 𝗬𝗮 𝗽𝘂𝗲𝗱𝗲𝘀 𝘂𝘀𝗮𝗿 𝗲𝗹 𝗰𝗼𝗺𝗮𝗻𝗱𝗼 /solicitar")
         return
 
-    # Usuarios aceptados: Filtro de repetidos y broadcast activo
+    # LÓGICA PARA USUARIOS ACEPTADOS
     if user["status"] == "accepted":
         await check_daily_reset(user_id, user)
         file_id = None
         if update.message.photo: file_id = update.message.photo[-1].file_unique_id
         elif update.message.video: file_id = update.message.video.file_unique_id
 
+        # Solo aquí revisamos y guardamos repetidos
         if file_id:
             if files_col.find_one({"file_id": file_id}):
                 await update.message.reply_text("𝘃𝗶𝗱𝗲𝗼 𝗿𝗲𝗽𝗲𝘁𝗶𝗱𝗼")
@@ -155,6 +163,7 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files_col.insert_one({"file_id": file_id, "user": user_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
+        # Reenvío a los demás
         for target in users_col.find({"status": "accepted"}):
             if target["user_id"] == user_id: continue
             try:
