@@ -3,6 +3,7 @@ import logging
 import threading
 import random
 import datetime
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pymongo import MongoClient
 from telegram import Update
@@ -39,6 +40,12 @@ def get_user(user_id):
 def generate_anon_name():
     return f"{random.choice(ANIMALES)} {random.choice(ADJETIVOS)} {random.randint(10, 99)}"
 
+def contiene_enlace(texto):
+    if not texto: return False
+    # Detecta http, https y enlaces de telegram t.me
+    patron = r"(https?://|t\.me/|www\.)"
+    return re.search(patron, texto, re.IGNORECASE)
+
 async def check_daily_reset(user_id, user_data):
     today = str(datetime.date.today())
     if user_data.get("last_reset") != today:
@@ -53,11 +60,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(user_id)
     if not user:
         users_col.insert_one({
-            "user_id": user_id,
-            "name": generate_anon_name(),
-            "status": "pending",
-            "aportes": 0,
-            "last_reset": str(datetime.date.today())
+            "user_id": user_id, "name": generate_anon_name(),
+            "status": "pending", "aportes": 0, "last_reset": str(datetime.date.today())
         })
     
     bienvenida = (
@@ -78,6 +82,12 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message: return
     user_id = update.effective_user.id
     user = get_user(user_id)
+
+    # Bloqueo de Enlaces
+    texto_a_revisar = update.message.text or update.message.caption
+    if contiene_enlace(texto_a_revisar):
+        # No respondemos nada para no dar pistas al spammer, solo ignoramos.
+        return
 
     # ADMIN COMMANDS
     if user_id == MY_ID:
@@ -116,20 +126,14 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             files_col.insert_one({"file_id": f_unique, "user": user_id})
             users_col.update_one({"user_id": user_id}, {"$inc": {"aportes": 1}})
 
-        # Lógica de nombre para Álbumes
-        # Si el mensaje NO es un álbum, o si es la PRIMERA parte de un álbum, ponemos el nombre.
-        # Intentamos detectar si es el inicio del álbum de forma sencilla:
-        # Nota: Telegram no dice cuál es el primero, así que usamos un truco de caché temporal.
-        caption_to_send = user['name']
-        
         # REENVÍO
         for target in users_col.find({"status": "accepted"}):
             if target["user_id"] == user_id: continue
             try:
                 if update.message.photo:
-                    await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id, caption=caption_to_send)
+                    await context.bot.send_photo(target["user_id"], update.message.photo[-1].file_id)
                 elif update.message.video:
-                    await context.bot.send_video(target["user_id"], update.message.video.file_id, caption=caption_to_send)
+                    await context.bot.send_video(target["user_id"], update.message.video.file_id)
                 elif update.message.text:
                     await context.bot.send_message(target["user_id"], f"{update.message.text}\n\n{user['name']}")
             except: pass
